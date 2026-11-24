@@ -764,10 +764,12 @@
   function cardHTML(r, queryTokens){
     var isHighlight = (r.id === activeDeepLinkCode);
 
+    // Подписи и подсказки
     var idTitle = 'Номер лицензии управляющей компании — нажмите, чтобы скопировать';
     var nameTitle = 'Полное фирменное наименование управляющей компании';
     var typeTitle = 'Управляющая компания инвестиционных фондов, ПИФ и НПФ';
 
+    // Формируем полный текст для «Поделиться» (ссылка второй строкой — контракт)
     var shareUrl = window.location.origin + window.location.pathname + '?code=' + encodeURIComponent(r.id);
     var shareLines = [
       r.name + (r.short_name ? ' (' + r.short_name + ')' : ''),
@@ -777,29 +779,52 @@
     ];
     if(r.ogrn) shareLines.push('ОГРН: ' + r.ogrn);
     if(r.inn) shareLines.push('ИНН: ' + r.inn);
+    if(r.activity) shareLines.push('Вид деятельности: ' + r.activity);
     if(r.date_issue) shareLines.push('Дата выдачи лицензии: ' + r.date_issue);
     if(r.term) shareLines.push('Срок действия: ' + r.term);
-    if(r.date_stop) shareLines.push('Дата прекращения: ' + r.date_stop);
+    if(r.date_stop) shareLines.push('Дата прекращения действия: ' + r.date_stop);
     if(r.date_cancel) shareLines.push('Дата аннулирования: ' + r.date_cancel);
+    if(r.address) shareLines.push('Адрес: ' + r.address);
+    if(r.phones.length) shareLines.push('Телефоны: ' + r.phones.join(', '));
+    if(r.emails.length) shareLines.push('Email: ' + r.emails.join(', '));
     if(r.sites.length) shareLines.push('Сайты: ' + r.sites.join(', '));
     shareLines.push('Источник: Банк России, выгрузка на ' + ACT_DATE);
     var shareText = shareLines.join('\n');
 
+    // Детали: ИНН/ОГРН, вид деятельности, даты, адрес, контакты
     var details = [];
     if(r.inn || r.ogrn){
       var line = '<span class="lbl">ИНН:</span> <span class="val">' + highlight(r.inn, queryTokens) + '</span>';
       if(r.ogrn) line += ' · <span class="lbl">ОГРН:</span> <span class="val">' + highlight(r.ogrn, queryTokens) + '</span>';
       details.push('<div title="ИНН и ОГРН управляющей компании по данным ЕГРЮЛ">' + line + '</div>');
     }
-    if(r.activity) details.push('<div title="Вид лицензируемой деятельности на финансовом рынке"><span class="lbl">Вид деятельности:</span> <span class="val">' + highlight(r.activity, queryTokens) + '</span></div>');
-    if(r.date_issue) details.push('<div title="Дата принятия Банком России решения о предоставлении лицензии"><span class="lbl">Лицензия выдана:</span> <span class="val">' + highlight(r.date_issue, queryTokens) + '</span></div>');
-    if(r.term) details.push('<div title="Срок действия лицензии по данным реестра"><span class="lbl">Срок действия:</span> <span class="val">' + highlight(r.term, queryTokens) + '</span></div>');
-    if(r.date_stop) details.push('<div title="Дата прекращения действия лицензии"><span class="lbl" style="color:var(--bad)">Прекращена:</span> <span class="val" style="color:var(--bad)">' + highlight(r.date_stop, queryTokens) + '</span></div>');
-    if(r.date_cancel) details.push('<div title="Дата принятия Банком России решения об аннулировании лицензии"><span class="lbl" style="color:var(--bad)">Аннулирована:</span> <span class="val" style="color:var(--bad)">' + highlight(r.date_cancel, queryTokens) + '</span></div>');
-    if(r.address) details.push('<div title="Адрес в пределах места нахождения, указанный в ЕГРЮЛ"><span class="lbl">Адрес:</span> <span class="val">' + highlight(r.address, queryTokens) + '</span></div>');
-    if(r.phones.length) details.push('<div title="Номера контактных телефонов"><span class="lbl">Телефон:</span> <span class="val">' + highlight(r.phones.join(', '), queryTokens) + '</span></div>');
-    if(r.emails.length) details.push('<div title="Адреса электронной почты"><span class="lbl">Email:</span> <span class="val">' + highlight(r.emails.join(', '), queryTokens) + '</span></div>');
+    if(r.activity) {
+      details.push('<div title="Вид лицензируемой деятельности на финансовом рынке"><span class="lbl">Вид деятельности:</span> <span class="val">' + highlight(r.activity, queryTokens) + '</span></div>');
+    }
+    if(r.date_issue) {
+      details.push('<div title="Дата принятия Банком России решения о предоставлении лицензии"><span class="lbl">Лицензия выдана:</span> <span class="val">' + highlight(r.date_issue, queryTokens) + '</span></div>');
+    }
+    if(r.term) {
+      details.push('<div title="Срок действия лицензии по данным реестра"><span class="lbl">Срок действия:</span> <span class="val">' + highlight(r.term, queryTokens) + '</span></div>');
+    }
+    // Даты прекращения/аннулирования — красным цветом (только для аннулированных)
+    if(r.date_stop) {
+      details.push('<div title="Дата прекращения действия лицензии"><span class="lbl" style="color:var(--bad)">Прекращена:</span> <span class="val" style="color:var(--bad)">' + highlight(r.date_stop, queryTokens) + '</span></div>');
+    }
+    if(r.date_cancel) {
+      details.push('<div title="Дата принятия Банком России решения об аннулировании лицензии"><span class="lbl" style="color:var(--bad)">Аннулирована:</span> <span class="val" style="color:var(--bad)">' + highlight(r.date_cancel, queryTokens) + '</span></div>');
+    }
+    if(r.address) {
+      details.push('<div title="Адрес в пределах места нахождения, указанный в ЕГРЮЛ"><span class="lbl">Адрес:</span> <span class="val">' + highlight(r.address, queryTokens) + '</span></div>');
+    }
+    if(r.phones.length) {
+      details.push('<div title="Номера контактных телефонов"><span class="lbl">Телефон:</span> <span class="val">' + highlight(r.phones.join(', '), queryTokens) + '</span></div>');
+    }
+    if(r.emails.length) {
+      details.push('<div title="Адреса электронной почты"><span class="lbl">Email:</span> <span class="val">' + highlight(r.emails.join(', '), queryTokens) + '</span></div>');
+    }
 
+    // Чипы сайтов (кликабельные, target=_blank, rel="noopener nofollow")
     var sitesHtml = '';
     if(r.sites.length){
       var chips = r.sites.map(function(s){
@@ -809,6 +834,7 @@
       sitesHtml = '<div title="Официальные сайты УК по данным реестра"><span class="lbl">Сайты:</span> <div class="chips">' + chips + '</div></div>';
     }
 
+    // Чипы доменов (для строгого поиска — не кликабельные)
     var domainsHtml = '';
     if(r.domains.length){
       var dchips = r.domains.map(function(d){
@@ -819,6 +845,7 @@
 
     var statusCls = r.status === 'Действующая' ? 'status-active' : 'status-bad';
 
+    // Красная плашка для аннулированных лицензий — 3 ветки
     var noteHtml = '';
     if(r.status === 'Аннулированная'){
       var exclText;
@@ -832,12 +859,6 @@
       noteHtml = '<div class="note-excl" title="Пояснение по аннулированным лицензиям">Лицензия аннулирована. ' + exclText + '</div>';
     }
 
-    // 🆕 Новая фишка: переход к фондам этой УК в реестре ПИФ (по ОГРН)
-    var pifHtml = '';
-    if(r.ogrn){
-      pifHtml = '<a class="action-btn" href="https://prog815.github.io/pif-registry/?code=' + encodeURIComponent(r.ogrn) + '" target="_blank" rel="noopener" title="Откроется реестр ПИФ: ОГРН управляющей компании подставится в строку поиска — так находятся её фонды">📈 Фонды УК в реестре ПИФ</a>';
-    }
-
     return '<article class="card' + (isHighlight ? ' highlight' : '') + '">' +
       '<div class="row1">' +
         '<span class="id-badge" data-id="' + esc(r.id) + '" title="' + idTitle + '">Лицензия: ' + highlight(r.id, queryTokens) + '</span>' +
@@ -849,7 +870,6 @@
       '<div class="details-grid">' + details.join('') + sitesHtml + domainsHtml + '</div>' +
       noteHtml +
       '<div class="actions">' +
-        pifHtml +
         '<div class="share-slot" data-id="' + esc(r.id) + '" data-share-text="' + esc(shareText) + '" title="Поделиться карточкой лицензии">' +
           '<button type="button" class="action-btn btn-share-fallback" data-id="' + esc(r.id) + '" title="Поделиться этой записью" aria-label="Поделиться записью">📤 Поделиться</button>' +
         '</div>' +
