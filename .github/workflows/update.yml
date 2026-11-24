@@ -1,0 +1,123 @@
+name: Daily UK Licenses Registry Update
+
+on:
+  schedule:
+    - cron: '12 9 * * *'      # Каждый день в 09:12 UTC (12:12 МСК), слот после инвестсоветников (52 8)
+  workflow_dispatch:          # Ручной запуск
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN_UK_LICENSES }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install Kaggle CLI с поддержкой API-токенов (>= 1.8.0)
+        run: |
+          pip install -q --upgrade kaggle
+          kaggle --version
+          python - <<'EOF'
+          import re, subprocess
+          out = subprocess.check_output(["kaggle", "--version"], text=True).strip()
+          m = re.search(r"(\d+)\.(\d+)", out)
+          assert m and tuple(map(int, m.groups())) >= (1, 8), \
+              f"нужен kaggle CLI >= 1.8.0 для API-токенов, получен: {out}"
+          print("OK: kaggle CLI поддерживает API-токены")
+          EOF
+
+      - name: Download latest kernel output
+        run: |
+          mkdir -p ./kaggle_output
+          kaggle kernels output eavprog/cbr-unified-fetcher -p ./kaggle_output || true
+          echo "Содержимое скачанных данных:"
+          find ./kaggle_output -maxdepth 4 -type f
+
+      - name: Copy UK Licenses files to repo root (.gz only)
+        id: copy
+        run: |
+          # Ищем папку uk_licenses на любом уровне вложенности внутри kaggle_output
+          SRC=$(find ./kaggle_output -type d -name "uk_licenses" | head -n 1)
+
+          if [ -z "$SRC" ]; then
+            echo "::error::Папка uk_licenses не найдена в результатах Kaggle"
+            echo "FILES_OK=false" >> "$GITHUB_ENV"
+            exit 1
+          fi
+
+          echo "Найдена папка с данными: $SRC"
+
+          MISSING=0
+          for f in uk_licenses.json.gz uk_licenses_meta.json.gz; do
+            if [ -f "$SRC/$f" ]; then
+              cp "$SRC/$f" "./$f"
+              echo "✅ copied $f"
+            else
+              echo "::warning::MISSING $f в $SRC"
+              MISSING=$((MISSING+1))
+            fi
+          done
+
+          if [ "$MISSING" -gt 0 ]; then
+            echo "❌ Отсутствует $MISSING из 2 файлов — коммит пропущен"
+            echo "FILES_OK=false" >> "$GITHUB_ENV"
+          else
+            echo "✅ Все 2 файла на месте"
+            echo "FILES_OK=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Check metadata
+        id: meta
+        if: env.FILES_OK == 'true'
+        run: |
+          python - <<'EOF'
+          import gzip, json, os
+          try:
+              with gzip.open("uk_licenses_meta.json.gz", "rt", encoding="utf-8") as f:
+                  m = json.load(f)
+
+              if not isinstance(m.get("records_count"), int) or m.get("records_count") <= 0:
+                  raise ValueError(f"records_count={m.get('records_count')}")
+
+              print(f"✓ Метаданные в порядке: {m.get('records_count')} записей.")
+              print(f"✓ Дата актуализации: {m.get('actualization_date')}")
+
+              with open(os.environ["GITHUB_ENV"], "a") as env:
+                  env.write("META_OK=true\n")
+          except Exception as e:
+              print(f"::error::Метаданные не прошли проверку: {e}")
+              with open(os.environ["GITHUB_ENV"], "a") as env:
+                  env.write("META_OK=false\n")
+          EOF
+
+      - name: Commit and push changes
+        if: env.FILES_OK == 'true' && env.META_OK == 'true'
+        run: |
+          git config --local user.email "github-actions@github.com"
+          git config --local user.name "GitHub Actions"
+
+          ACT_DATE=$(gzip -d -c uk_licenses_meta.json.gz | python -c "import sys, json; print(json.load(sys.stdin).get('actualization_date','?'))")
+
+          # Автообновление <lastmod> в sitemap.xml (DD.MM.YYYY → YYYY-MM-DD)
+          ISO_DATE=$(python -c "import re; m=re.fullmatch(r'(\d{2})\.(\d{2})\.(\d{4})', '${ACT_DATE}'); print(f'{m.group(3)}-{m.group(2)}-{m.group(1)}' if m else '')")
+          if [ -n "$ISO_DATE" ] && [ -f sitemap.xml ]; then
+            sed -i "s|<lastmod>[^<]*</lastmod>|<lastmod>${ISO_DATE}</lastmod>|g" sitemap.xml
+            echo "✅ sitemap.xml lastmod → ${ISO_DATE}"
+          fi
+
+          git add uk_licenses.json.gz uk_licenses_meta.json.gz sitemap.xml
+
+          if git diff --cached --quiet; then
+            echo "✅ Изменений нет — данные уже актуальны"
+          else
+            git commit -m "Auto-update: UK licenses registry data (actualized ${ACT_DATE}) [skip ci]"
+            git push
+            echo "✅ Изменения запушены"
+          fi
